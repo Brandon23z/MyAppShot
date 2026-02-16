@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import TemplateSelector from "./TemplateSelector";
 import PaywallModal from "./PaywallModal";
 import { applyTemplate, exportCanvas } from "@/utils/canvas";
-import { isPaidUser, hasHitFreeLimit, incrementUsage, getRemainingExports } from "@/utils/freebie";
+import { isPaidUser, hasHitFreeLimit, incrementUsage, getRemainingExports, getSubscriptionId, getCustomerId, revokePaid, isVerificationCached, updateVerificationCache } from "@/utils/freebie";
 
 interface Template {
   id: string;
@@ -214,8 +214,71 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
     transformStartRef.current = null;
   };
 
+  // Handle manage subscription
+  const handleManageSubscription = async () => {
+    const customerId = getCustomerId();
+    
+    if (!customerId) {
+      alert('Customer information not found. Please contact support.');
+      return;
+    }
+    
+    try {
+      const response = await fetch('/api/portal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customer_id: customerId }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.url) {
+        // Redirect to Stripe billing portal
+        window.location.href = data.url;
+      } else {
+        alert('Failed to open billing portal. Please try again.');
+      }
+    } catch (error) {
+      console.error('Portal error:', error);
+      alert('An error occurred. Please try again.');
+    }
+  };
+
   // Download handler
-  const handleDownload = () => {
+  const handleDownload = async () => {
+    // Verify subscription if user is marked as paid
+    if (isPaid) {
+      const subscriptionId = getSubscriptionId();
+      
+      // If we have a subscription ID, verify it (unless cached within last hour)
+      if (subscriptionId && !isVerificationCached()) {
+        try {
+          const response = await fetch('/api/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ subscription_id: subscriptionId }),
+          });
+          
+          const data = await response.json();
+          
+          if (!data.active) {
+            // Subscription is no longer active
+            revokePaid();
+            setIsPaid(false);
+            alert('Your subscription is no longer active. Please renew to continue using Pro features.');
+            setShowPaywall(true);
+            return;
+          }
+          
+          // Cache the verification
+          updateVerificationCache();
+        } catch (error) {
+          console.error('Failed to verify subscription:', error);
+          // Continue anyway - don't block export on verification failure
+        }
+      }
+    }
+    
     // Check if user has hit free limit
     if (!isPaid && hasHitFreeLimit()) {
       setShowPaywall(true);
@@ -257,9 +320,19 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
           {/* Custom Watermark Input - Always visible when image is loaded */}
           {image && (
             <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
-              <label className="block text-sm font-medium mb-2 text-gray-300">
-                Custom Watermark (optional)
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-300">
+                  Custom Watermark (optional)
+                </label>
+                {isPaid && getCustomerId() && (
+                  <button
+                    onClick={handleManageSubscription}
+                    className="text-xs text-purple-400 hover:text-purple-300 transition-colors underline"
+                  >
+                    Manage Subscription
+                  </button>
+                )}
+              </div>
               <input
                 type="text"
                 value={customWatermark}

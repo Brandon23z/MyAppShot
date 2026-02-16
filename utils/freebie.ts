@@ -5,6 +5,8 @@ const STORAGE_KEYS = {
   RESET_DATE: 'screenclip_reset_date',
   PAID: 'screenclip_paid',
   CUSTOMER_ID: 'screenclip_customer_id',
+  SUBSCRIPTION_ID: 'screenclip_subscription_id',
+  LAST_VERIFIED: 'screenclip_last_verified',
 };
 
 const FREE_LIMIT = 3;
@@ -54,13 +56,55 @@ export function incrementUsage(): void {
 }
 
 // Mark user as paid (after successful checkout)
-export function markAsPaid(customerId?: string): void {
+export function markAsPaid(customerId?: string, subscriptionId?: string): void {
   if (typeof window === 'undefined') return;
   
   localStorage.setItem(STORAGE_KEYS.PAID, 'true');
   if (customerId) {
     localStorage.setItem(STORAGE_KEYS.CUSTOMER_ID, customerId);
   }
+  if (subscriptionId) {
+    localStorage.setItem(STORAGE_KEYS.SUBSCRIPTION_ID, subscriptionId);
+  }
+}
+
+// Get stored subscription ID
+export function getSubscriptionId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(STORAGE_KEYS.SUBSCRIPTION_ID);
+}
+
+// Get stored customer ID
+export function getCustomerId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem(STORAGE_KEYS.CUSTOMER_ID);
+}
+
+// Revoke paid status (when subscription is no longer active)
+export function revokePaid(): void {
+  if (typeof window === 'undefined') return;
+  
+  localStorage.removeItem(STORAGE_KEYS.PAID);
+  localStorage.removeItem(STORAGE_KEYS.CUSTOMER_ID);
+  localStorage.removeItem(STORAGE_KEYS.SUBSCRIPTION_ID);
+  localStorage.removeItem(STORAGE_KEYS.LAST_VERIFIED);
+}
+
+// Check if verification is cached (within 1 hour)
+export function isVerificationCached(): boolean {
+  if (typeof window === 'undefined') return false;
+  
+  const lastVerified = localStorage.getItem(STORAGE_KEYS.LAST_VERIFIED);
+  if (!lastVerified) return false;
+  
+  const oneHourAgo = Date.now() - (60 * 60 * 1000);
+  return parseInt(lastVerified, 10) > oneHourAgo;
+}
+
+// Update verification timestamp
+export function updateVerificationCache(): void {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(STORAGE_KEYS.LAST_VERIFIED, String(Date.now()));
 }
 
 // Get remaining free exports

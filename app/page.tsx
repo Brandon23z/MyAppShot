@@ -10,17 +10,45 @@ export default function Home() {
   // Handle Stripe success redirect
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('paid') === 'true') {
-      // Mark user as paid
+    const isPaid = params.get('paid') === 'true';
+    const sessionId = params.get('session_id');
+    
+    if (isPaid && sessionId) {
+      // Fetch subscription and customer IDs from session
+      fetch('/api/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId }),
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.subscription_id && data.customer_id) {
+            // Mark user as paid with subscription details
+            markAsPaid(data.customer_id, data.subscription_id);
+            
+            // Remove query params from URL (clean up)
+            window.history.replaceState({}, '', '/');
+            
+            // Show success message
+            alert('🎉 Welcome to AppShot Pro! You now have unlimited exports and no watermark.');
+            
+            // Reload to update UI
+            window.location.reload();
+          }
+        })
+        .catch(err => {
+          console.error('Failed to retrieve session:', err);
+          // Fallback to old behavior
+          markAsPaid();
+          window.history.replaceState({}, '', '/');
+          alert('🎉 Welcome to AppShot Pro! You now have unlimited exports and no watermark.');
+          window.location.reload();
+        });
+    } else if (isPaid) {
+      // Backward compatibility: old success URL without session_id
       markAsPaid();
-      
-      // Remove query param from URL (clean up)
       window.history.replaceState({}, '', '/');
-      
-      // Show success message
       alert('🎉 Welcome to AppShot Pro! You now have unlimited exports and no watermark.');
-      
-      // Reload to update UI
       window.location.reload();
     }
   }, []);
