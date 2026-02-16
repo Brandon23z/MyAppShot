@@ -392,21 +392,25 @@ function drawBackground(
   canvas: HTMLCanvasElement,
   template: Template
 ) {
-  if (template.type === "gradient") {
+  // If this is a device template with an attached background, use the background
+  const bgSource = template.config?._background || template;
+  
+  if (bgSource.type === "gradient" && bgSource.config?.colors) {
+    const angle = bgSource.config.angle || 135;
     const gradient = ctx.createLinearGradient(
       0,
       0,
-      canvas.width * Math.cos((template.config.angle * Math.PI) / 180),
-      canvas.height * Math.sin((template.config.angle * Math.PI) / 180)
+      canvas.width * Math.cos((angle * Math.PI) / 180),
+      canvas.height * Math.sin((angle * Math.PI) / 180)
     );
     
-    template.config.colors.forEach((color: string, index: number) => {
-      gradient.addColorStop(index / (template.config.colors.length - 1), color);
+    bgSource.config.colors.forEach((color: string, index: number) => {
+      gradient.addColorStop(index / (bgSource.config.colors.length - 1), color);
     });
     
     ctx.fillStyle = gradient;
-  } else if (template.type === "solid") {
-    ctx.fillStyle = template.config.color;
+  } else if (bgSource.type === "solid" && bgSource.config?.color) {
+    ctx.fillStyle = bgSource.config.color;
   } else {
     // Default gradient for device mockups - subtle and professional
     const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);

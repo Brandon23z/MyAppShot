@@ -22,6 +22,7 @@ interface ImageTransform {
 export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
+  const [activeBackground, setActiveBackground] = useState<Template | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [customWatermark, setCustomWatermark] = useState("");
   const [imageTransform, setImageTransform] = useState<ImageTransform>({ scale: 1, x: 0, y: 0 });
@@ -48,12 +49,14 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
         setImage(img);
         // Auto-select first gradient template if no template is selected
         if (!selectedTemplate) {
-          setSelectedTemplate({
-            id: "gradient-purple",
+          const defaultBg: Template = {
+            id: "gradient-purple-pink",
             name: "Purple Dream",
             type: "gradient",
-            config: { colors: ["#667eea", "#764ba2"], angle: 135 }
-          });
+            config: { colors: ["#4c1d95", "#ec4899", "#fce7f3"], angle: 135 }
+          };
+          setSelectedTemplate(defaultBg);
+          setActiveBackground(defaultBg);
         }
       };
       img.src = e.target?.result as string;
@@ -98,15 +101,41 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
     return () => window.removeEventListener("paste", handlePaste);
   }, []);
 
+  // Handle template selection — track background separately from device
+  const handleTemplateChange = (template: Template) => {
+    if (template.type === "gradient" || template.type === "solid") {
+      setActiveBackground(template);
+      // If a device is currently active, keep the device but update background only
+      if (selectedTemplate?.type === "device") {
+        // Don't change selectedTemplate — just update activeBackground (triggers re-render)
+        return;
+      }
+    }
+    // When selecting a device with no background chosen, default to first gradient
+    if (template.type === "device" && !activeBackground) {
+      setActiveBackground({
+        id: "gradient-purple-pink",
+        name: "Purple Dream",
+        type: "gradient",
+        config: { colors: ["#4c1d95", "#ec4899", "#fce7f3"], angle: 135 }
+      });
+    }
+    setSelectedTemplate(template);
+  };
+
   // Render canvas when image or template changes
   useEffect(() => {
     if (image && canvasRef.current && selectedTemplate) {
-      // applyTemplate is now async, so we need to call it properly
-      applyTemplate(canvasRef.current, image, selectedTemplate, customWatermark, imageTransform, isPaid).catch(err => {
+      // If a device frame is selected, inject the active background colors into the template
+      const renderTemplate = selectedTemplate.type === "device" && activeBackground
+        ? { ...selectedTemplate, config: { ...selectedTemplate.config, _background: activeBackground } }
+        : selectedTemplate;
+      
+      applyTemplate(canvasRef.current, image, renderTemplate, customWatermark, imageTransform, isPaid).catch(err => {
         console.error('Failed to apply template:', err);
       });
     }
-  }, [image, selectedTemplate, customWatermark, imageTransform, isPaid]);
+  }, [image, selectedTemplate, activeBackground, customWatermark, imageTransform, isPaid]);
 
   // Reset transform when template changes
   useEffect(() => {
@@ -178,7 +207,10 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
         const canvas = canvasRef.current;
         setTimeout(() => {
           if (canvas && image && selectedTemplate) {
-            applyTemplate(canvas, image, selectedTemplate, customWatermark, { scale: relativeScale, x: 0, y: yOffset }, isPaid).catch(err => {
+            const renderTemplate = selectedTemplate.type === "device" && activeBackground
+              ? { ...selectedTemplate, config: { ...selectedTemplate.config, _background: activeBackground } }
+              : selectedTemplate;
+            applyTemplate(canvas, image, renderTemplate, customWatermark, { scale: relativeScale, x: 0, y: yOffset }, isPaid).catch(err => {
               console.error('Failed to apply template:', err);
             });
           }
@@ -461,7 +493,8 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
           <div className="lg:sticky lg:top-8 h-fit">
             <TemplateSelector
               selectedTemplate={selectedTemplate}
-              onSelectTemplate={setSelectedTemplate}
+              onSelectTemplate={handleTemplateChange}
+              activeBackground={activeBackground}
             />
           </div>
         )}

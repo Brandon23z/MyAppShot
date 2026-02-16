@@ -89,9 +89,11 @@ const templates: Template[] = [
 export default function TemplateSelector({
   selectedTemplate,
   onSelectTemplate,
+  activeBackground,
 }: {
   selectedTemplate: Template | null;
   onSelectTemplate: (template: Template) => void;
+  activeBackground?: Template | null;
 }) {
   const [phoneOrientation, setPhoneOrientation] = useState<"portrait" | "landscape">("portrait");
 
@@ -141,13 +143,16 @@ export default function TemplateSelector({
         <div>
           <h4 className="text-sm text-gray-400 mb-3 font-medium">Backgrounds</h4>
           <div className="grid grid-cols-2 gap-3">
-            {templates.filter(t => t.type === "gradient" || t.type === "solid").map((template) => (
+            {templates.filter(t => t.type === "gradient" || t.type === "solid").map((template) => {
+              // Highlight based on activeBackground (persists even when device is selected)
+              const isActive = activeBackground ? activeBackground.id === template.id : selectedTemplate?.id === template.id;
+              return (
               <button
                 key={template.id}
                 onClick={() => handleTemplateSelect(template)}
                 className={`
                   p-3 rounded-lg border-2 transition-all text-left
-                  ${selectedTemplate?.id === template.id
+                  ${isActive
                     ? "border-purple-500 bg-purple-500/20"
                     : "border-gray-700 hover:border-gray-600 bg-gray-900/50"
                   }
@@ -168,7 +173,8 @@ export default function TemplateSelector({
                 )}
                 <p className="text-sm font-medium">{template.name}</p>
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
 
