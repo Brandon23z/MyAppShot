@@ -1022,12 +1022,12 @@ function addWatermark(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, 
     ctx.shadowColor = "rgba(0, 0, 0, 0.4)";
     ctx.shadowBlur = 6;
     ctx.shadowOffsetY = 2;
-    ctx.strokeText(customText, canvas.width / 2, canvas.height - 30);
+    ctx.strokeText(customText, canvas.width / 2, canvas.height - 60);
     
     // Draw white fill on top
     ctx.fillStyle = "rgba(255, 255, 255, 0.95)";
     ctx.shadowBlur = 0;
-    ctx.fillText(customText, canvas.width / 2, canvas.height - 30);
+    ctx.fillText(customText, canvas.width / 2, canvas.height - 60);
   }
   
   // Reset shadow and stroke
