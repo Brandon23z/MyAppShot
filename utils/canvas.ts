@@ -255,7 +255,7 @@ export async function applyTemplate(
         ctx.fillStyle = "#000000";
         ctx.fillRect(x, y, ipadWidth, ipadHeight);
         
-        const baseScale = Math.min(ipadWidth / image.width, ipadHeight / image.height);
+        const baseScale = Math.max(ipadWidth / image.width, ipadHeight / image.height);
         const scaledWidth = image.width * baseScale * imageTransform.scale;
         const scaledHeight = image.height * baseScale * imageTransform.scale;
         const imageX = x + (ipadWidth - scaledWidth) / 2 + imageTransform.x;
@@ -295,7 +295,7 @@ export async function applyTemplate(
       template.config._realScreenDimensions = { width: macbookScreenW, height: macbookScreenH };
       
       // Draw image inside MacBook screen with transform support
-      const baseScale = Math.min(macbookScreenW / image.width, macbookScreenH / image.height);
+      const baseScale = Math.max(macbookScreenW / image.width, macbookScreenH / image.height);
       const scaledWidth = image.width * baseScale * imageTransform.scale;
       const scaledHeight = image.height * baseScale * imageTransform.scale;
       const imageX = screenX + (macbookScreenW - scaledWidth) / 2 + imageTransform.x;
@@ -334,7 +334,7 @@ export async function applyTemplate(
       template.config._realScreenDimensions = { width: browserWidth, height: browserHeight };
       
       // Draw image inside browser with transform support
-      const baseScale = Math.min(browserWidth / image.width, browserHeight / image.height);
+      const baseScale = Math.max(browserWidth / image.width, browserHeight / image.height);
       const scaledWidth = image.width * baseScale * imageTransform.scale;
       const scaledHeight = image.height * baseScale * imageTransform.scale;
       const imageX = windowX + (browserWidth - scaledWidth) / 2 + imageTransform.x;
@@ -681,18 +681,18 @@ function drawImageInDeviceScreen(
   transform: ImageTransform,
   cornerRadius: number = 37
 ) {
-  // Create clipping path for screen area with rounded corners
+  // Fill screen background with WHITE on full rectangle (covers corners so background doesn't bleed through)
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(screenX, screenY, screenWidth, screenHeight);
+
+  // Clip image to rounded corners
   ctx.save();
   ctx.beginPath();
   ctx.roundRect(screenX, screenY, screenWidth, screenHeight, cornerRadius);
   ctx.clip();
-  
-  // Fill screen background with WHITE
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(screenX, screenY, screenWidth, screenHeight);
-  
+
   // Calculate scaled image dimensions
-  const baseScale = Math.min(screenWidth / image.width, screenHeight / image.height);
+  const baseScale = Math.max(screenWidth / image.width, screenHeight / image.height);
   const finalScale = baseScale * transform.scale;
   const scaledWidth = image.width * finalScale;
   const scaledHeight = image.height * finalScale;
@@ -724,20 +724,20 @@ function drawImageInPhoneReal(
 ) {
   // iPhone screen has rounded corners - need proper clipping radius
   const screenCornerRadius = 37;
-  
-  // Create clipping path for screen area with rounded corners
+
+  // Fill screen background with WHITE on full rectangle (covers corners so background doesn't bleed through)
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(screenX, screenY, screenWidth, screenHeight);
+
+  // Clip image to rounded corners
   ctx.save();
   ctx.beginPath();
   ctx.roundRect(screenX, screenY, screenWidth, screenHeight, screenCornerRadius);
   ctx.clip();
   
-  // Fill screen background with WHITE
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(screenX, screenY, screenWidth, screenHeight);
-  
   // Calculate scaled image dimensions
-  // Base scale fits the image to the screen (Math.min = fit/contain mode)
-  const baseScale = Math.min(screenWidth / image.width, screenHeight / image.height);
+  // Base scale covers the screen (Math.max = cover mode, no white bars)
+  const baseScale = Math.max(screenWidth / image.width, screenHeight / image.height);
   const finalScale = baseScale * transform.scale;
   const scaledWidth = image.width * finalScale;
   const scaledHeight = image.height * finalScale;
@@ -790,23 +790,23 @@ function drawImageInPhone(
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(screenX, screenY, screenWidth, screenHeight);
   
-  // Calculate scaled image dimensions
-  const baseScale = Math.min(screenWidth / image.width, screenHeight / image.height);
+  // Calculate scaled image dimensions (cover mode - no white bars)
+  const baseScale = Math.max(screenWidth / image.width, screenHeight / image.height);
   const finalScale = baseScale * transform.scale;
   const scaledWidth = image.width * finalScale;
   const scaledHeight = image.height * finalScale;
-  
+
   // Calculate position with transform offset
   const imageCenterX = centerX + transform.x;
   const imageCenterY = centerY + transform.y;
   const imageX = imageCenterX - scaledWidth / 2;
   const imageY = imageCenterY - scaledHeight / 2;
-  
+
   // Draw the image (will be clipped to rounded rectangle)
   ctx.drawImage(image, imageX, imageY, scaledWidth, scaledHeight);
-  
+
   ctx.restore();
-  
+
   // Premium glass screen reflection effect
   const reflectionGradient = ctx.createLinearGradient(screenX, screenY, screenX, screenY + screenHeight);
   reflectionGradient.addColorStop(0, "rgba(255, 255, 255, 0.08)");

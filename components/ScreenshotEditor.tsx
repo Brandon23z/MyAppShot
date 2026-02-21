@@ -144,79 +144,74 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
     }
   }, [selectedTemplate?.id]);
 
-  // Auto-fill when device template is selected or when image is uploaded with device template active
+  // Auto-fill screen when device template is selected or when image is uploaded
   useEffect(() => {
     if (image && selectedTemplate?.config?.device) {
-      // Delay slightly to ensure canvas is rendered
       const timer = setTimeout(() => {
-        handleFillImage();
+        handleFillScreen();
       }, 100);
       return () => clearTimeout(timer);
     }
   }, [image, selectedTemplate?.id]);
 
-  // Handle Fill button - auto-fill image to device screen (cover, not contain)
-  const handleFillImage = () => {
-    if (selectedTemplate?.config?.device && image) {
-      // Use real screen dimensions if available (from loaded PNG frame)
-      // Otherwise fall back to hardcoded dimensions
-      let screenWidth, screenHeight;
-      
-      if (selectedTemplate.config._realScreenDimensions) {
-        screenWidth = selectedTemplate.config._realScreenDimensions.width;
-        screenHeight = selectedTemplate.config._realScreenDimensions.height;
-      } else if (selectedTemplate.config.device === "phone") {
-        const orientation = selectedTemplate.config.orientation || "portrait";
-        screenWidth = orientation === "portrait" ? 380 : 780;
-        screenHeight = orientation === "portrait" ? 780 : 380;
-      } else if (selectedTemplate.config.device === "ipad") {
-        screenWidth = 1024;
-        screenHeight = 768;
-      } else if (selectedTemplate.config.device === "macbook") {
-        screenWidth = 1280;
-        screenHeight = 800;
-      } else if (selectedTemplate.config.device === "browser") {
-        screenWidth = 1200;
-        screenHeight = 675;
-      }
-      
-      // Calculate scale to fill (cover) the screen
-      // drawImageInPhone calculates baseScale as Math.min (fit mode)
-      // We want to cover, so we calculate the ratio between cover and fit
-      const fitScale = Math.min(screenWidth / image.width, screenHeight / image.height);
-      const coverScale = Math.max(screenWidth / image.width, screenHeight / image.height);
-      
-      // transform.scale is relative to baseScale (fit), so we need cover/fit ratio
-      const relativeScale = coverScale / fitScale;
-      
-      // Align top of image with top of screen frame
-      // Both phone and other devices center the image by default
-      // Positive y moves image down, so we need negative to move up... no:
-      // For all devices, transform.y = (scaledH - screenH)/2 aligns top
-      const scaledHeight = image.height * fitScale * relativeScale;
-      const yOffset = (scaledHeight - screenHeight) / 2;
-      
-      setImageTransform({ 
-        scale: relativeScale, 
-        x: 0, 
-        y: yOffset
-      });
-      
-      // Force canvas re-render
-      if (canvasRef.current) {
-        const canvas = canvasRef.current;
-        setTimeout(() => {
-          if (canvas && image && selectedTemplate) {
-            const renderTemplate = selectedTemplate.type === "device" && activeBackground
-              ? { ...selectedTemplate, config: { ...selectedTemplate.config, _background: activeBackground } }
-              : selectedTemplate;
-            applyTemplate(canvas, image, renderTemplate, customWatermark, { scale: relativeScale, x: 0, y: yOffset }, isPaid).catch(err => {
-              console.error('Failed to apply template:', err);
-            });
-          }
-        }, 0);
-      }
+  // Get screen dimensions for the current device template
+  const getScreenDimensions = () => {
+    if (!selectedTemplate?.config?.device) return { width: 0, height: 0 };
+    if (selectedTemplate.config._realScreenDimensions) {
+      return selectedTemplate.config._realScreenDimensions;
     }
+    if (selectedTemplate.config.device === "phone") {
+      const orientation = selectedTemplate.config.orientation || "portrait";
+      return { width: orientation === "portrait" ? 380 : 780, height: orientation === "portrait" ? 780 : 380 };
+    }
+    if (selectedTemplate.config.device === "ipad") return { width: 1024, height: 768 };
+    if (selectedTemplate.config.device === "macbook") return { width: 1280, height: 800 };
+    if (selectedTemplate.config.device === "browser") return { width: 1200, height: 675 };
+    return { width: 0, height: 0 };
+  };
+
+  // Apply a fill transform and force re-render
+  const applyFillTransform = (transform: ImageTransform) => {
+    setImageTransform(transform);
+    if (canvasRef.current) {
+      const canvas = canvasRef.current;
+      setTimeout(() => {
+        if (canvas && image && selectedTemplate) {
+          const renderTemplate = selectedTemplate.type === "device" && activeBackground
+            ? { ...selectedTemplate, config: { ...selectedTemplate.config, _background: activeBackground } }
+            : selectedTemplate;
+          applyTemplate(canvas, image, renderTemplate, customWatermark, transform, isPaid).catch(err => {
+            console.error('Failed to apply template:', err);
+          });
+        }
+      }, 0);
+    }
+  };
+
+  // Fill Screen - image covers entire screen (no gaps, may crop edges)
+  const handleFillScreen = () => {
+    if (!selectedTemplate?.config?.device || !image) return;
+    applyFillTransform({ scale: 1, x: 0, y: 0 });
+  };
+
+  // Fill Horizontal - image touches left and right edges (may have gaps top/bottom)
+  const handleFillHorizontal = () => {
+    if (!selectedTemplate?.config?.device || !image) return;
+    const { width: sw, height: sh } = getScreenDimensions();
+    const coverScale = Math.max(sw / image.width, sh / image.height);
+    const widthScale = sw / image.width;
+    const relativeScale = widthScale / coverScale;
+    applyFillTransform({ scale: relativeScale, x: 0, y: 0 });
+  };
+
+  // Fill Vertical - image touches top and bottom edges (may have gaps left/right)
+  const handleFillVertical = () => {
+    if (!selectedTemplate?.config?.device || !image) return;
+    const { width: sw, height: sh } = getScreenDimensions();
+    const coverScale = Math.max(sw / image.width, sh / image.height);
+    const heightScale = sh / image.height;
+    const relativeScale = heightScale / coverScale;
+    applyFillTransform({ scale: relativeScale, x: 0, y: 0 });
   };
 
   // Handle mouse down for dragging (all device frames)
@@ -417,7 +412,7 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
               {selectedTemplate?.config?.device && (
                 <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4">
                   <p className="text-sm text-purple-300">
-                    <strong>🖼️ Device Controls:</strong> Drag to reposition • Use zoom slider on the left • Click "Fill" to auto-fit
+                    <strong>🖼️ Device Controls:</strong> Drag to reposition • Use zoom slider • Fill buttons to auto-fit
                   </p>
                 </div>
               )}
@@ -428,13 +423,29 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
                   {/* Zoom Slider - shown for all device frames */}
                   {selectedTemplate?.config?.device && (
                     <div className="flex flex-col items-center gap-2">
-                      <button
-                        onClick={handleFillImage}
-                        className="bg-purple-600 hover:bg-purple-700 text-white text-xs px-3 py-2 rounded transition-colors font-medium"
-                        title="Auto-fit image to screen"
-                      >
-                        Fill
-                      </button>
+                      <div className="flex flex-col gap-1">
+                        <button
+                          onClick={handleFillHorizontal}
+                          className="bg-purple-600 hover:bg-purple-700 text-white text-[10px] px-2 py-1.5 rounded transition-colors font-medium"
+                          title="Fill left and right edges"
+                        >
+                          Fill H
+                        </button>
+                        <button
+                          onClick={handleFillVertical}
+                          className="bg-purple-600 hover:bg-purple-700 text-white text-[10px] px-2 py-1.5 rounded transition-colors font-medium"
+                          title="Fill top and bottom edges"
+                        >
+                          Fill V
+                        </button>
+                        <button
+                          onClick={handleFillScreen}
+                          className="bg-purple-600 hover:bg-purple-700 text-white text-[10px] px-2 py-1.5 rounded transition-colors font-medium"
+                          title="Fill entire screen (may crop edges)"
+                        >
+                          Fill All
+                        </button>
+                      </div>
                       <div className="flex flex-col items-center gap-2 bg-gray-900/50 rounded-lg p-3">
                         <span className="text-xs text-gray-400">Zoom</span>
                         <input
