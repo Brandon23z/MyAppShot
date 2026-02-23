@@ -235,7 +235,7 @@ export default function TemplateSelector({
         <p className="text-xs text-gray-400">
           <span className="text-purple-400 font-semibold">Free Tier:</span> {FREE_LIMIT} screenshots/month
           <br />
-          <span className="text-gray-500 text-[10px]">Includes "AppShot Free" watermark</span>
+          <span className="text-gray-500 text-[10px]">Includes "MyAppShot.com" watermark</span>
         </p>
       </div>
     </div>

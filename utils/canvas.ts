@@ -1002,14 +1002,14 @@ function addWatermark(ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement, 
   // Setup font
   ctx.font = "bold 24px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
   
-  // Only show "AppShot Free" branding if user is NOT paid
+  // Only show "MyAppShot.com" branding if user is NOT paid
   if (!isPaid) {
     ctx.shadowColor = "rgba(0, 0, 0, 0.2)";
     ctx.shadowBlur = 3;
     ctx.shadowOffsetY = 1;
     ctx.fillStyle = "rgba(255, 255, 255, 0.35)"; // Reduced opacity, subtle branding
     ctx.textAlign = "right";
-    ctx.fillText("AppShot Free", canvas.width - 30, canvas.height - 30);
+    ctx.fillText("MyAppShot.com", canvas.width - 30, canvas.height - 30);
   }
   
   // If custom watermark provided, show at bottom CENTER with stroke effect

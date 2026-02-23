@@ -382,7 +382,7 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
               <p className="text-xs text-gray-500 mt-2">
                 {isPaid 
                   ? "Adds your text at bottom center • Pro users have no forced watermark" 
-                  : `Adds your text at bottom center • "AppShot Free" branding shown at bottom right • ${getRemainingExports()} free exports remaining this month`
+                  : `Adds your text at bottom center • "MyAppShot.com" branding shown at bottom right • ${getRemainingExports()} free exports remaining this month`
                 }
               </p>
             </div>

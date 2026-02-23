@@ -66,7 +66,7 @@ export default function PaywallModal({ isOpen, onClose }: PaywallModalProps) {
             <span className="text-2xl">✨</span>
             <div>
               <h3 className="font-semibold text-white">No Watermark</h3>
-              <p className="text-sm text-gray-400">Remove "AppShot Free" branding</p>
+              <p className="text-sm text-gray-400">Remove "MyAppShot.com" branding</p>
             </div>
           </div>
           
