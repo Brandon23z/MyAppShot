@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
+import { createClient } from '@/utils/supabase/server';
 
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -11,24 +12,33 @@ function getStripe() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { customer_id } = await req.json();
-    
-    if (!customer_id) {
-      return NextResponse.json(
-        { error: 'customer_id is required' },
-        { status: 400 }
-      );
+    const supabase = await createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) {
+      return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    }
+
+    // Look up customer ID from the subscriptions table
+    const { data: subscription } = await supabase
+      .from('subscriptions')
+      .select('stripe_customer_id')
+      .eq('user_id', user.id)
+      .limit(1)
+      .single();
+
+    if (!subscription?.stripe_customer_id) {
+      return NextResponse.json({ error: 'No subscription found' }, { status: 404 });
     }
 
     const stripe = getStripe();
     const origin = req.headers.get('origin') || 'http://localhost:3000';
-    
-    // Create billing portal session
+
     const session = await stripe.billingPortal.sessions.create({
-      customer: customer_id,
+      customer: subscription.stripe_customer_id,
       return_url: origin,
     });
-    
+
     return NextResponse.json({ url: session.url });
   } catch (error) {
     console.error('Stripe portal error:', error);

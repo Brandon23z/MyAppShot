@@ -13,7 +13,9 @@ export async function POST(req: NextRequest) {
   try {
     const stripe = getStripe();
     const origin = req.headers.get('origin') || 'http://localhost:3000';
-    
+    const body = await req.json().catch(() => ({}));
+    const { user_id, email } = body;
+
     // Create Stripe Checkout Session
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
@@ -24,6 +26,11 @@ export async function POST(req: NextRequest) {
           quantity: 1,
         },
       ],
+      ...(email && { customer_email: email }),
+      ...(user_id && {
+        metadata: { user_id },
+        subscription_data: { metadata: { user_id } },
+      }),
       success_url: `${origin}/?paid=true&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/`,
     });

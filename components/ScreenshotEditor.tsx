@@ -1,10 +1,14 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { User } from "@supabase/supabase-js";
 import TemplateSelector from "./TemplateSelector";
 import PaywallModal from "./PaywallModal";
 import { applyTemplate, exportCanvas } from "@/utils/canvas";
-import { isPaidUser, hasHitFreeLimit, incrementUsage, getRemainingExports, getSubscriptionId, getCustomerId, revokePaid, isVerificationCached, updateVerificationCache } from "@/utils/freebie";
+import { hasHitFreeLimit, incrementUsage as incrementLocalUsage, getRemainingExports } from "@/utils/freebie";
+import { checkSubscription, getUsageCount as getDbUsageCount, incrementUsage as incrementDbUsage } from "@/utils/subscription";
+import { createClient } from "@/utils/supabase/client";
+import { FREE_LIMIT } from "@/utils/freebie";
 
 interface Template {
   id: string;
@@ -19,7 +23,14 @@ interface ImageTransform {
   y: number;
 }
 
-export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
+interface ScreenshotEditorProps {
+  onBack: () => void;
+  user: User | null;
+  isPaid: boolean;
+  onAuthRequired: () => void;
+}
+
+export default function ScreenshotEditor({ onBack, user, isPaid, onAuthRequired }: ScreenshotEditorProps) {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
   const [activeBackground, setActiveBackground] = useState<Template | null>(null);
@@ -27,18 +38,12 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
   const [customWatermark, setCustomWatermark] = useState("");
   const [imageTransform, setImageTransform] = useState<ImageTransform>({ scale: 1, x: 0, y: 0 });
   const [isTransforming, setIsTransforming] = useState(false);
-  const [isPaid, setIsPaid] = useState(false);
   const [screenBgColor, setScreenBgColor] = useState<"#ffffff" | "#000000">("#000000");
   const [showPaywall, setShowPaywall] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const transformStartRef = useRef<{ x: number; y: number } | null>(null);
   const realScreenDimsRef = useRef<{ width: number; height: number } | null>(null);
-
-  // Check payment status on mount
-  useEffect(() => {
-    setIsPaid(isPaidUser());
-  }, []);
 
   // Handle file upload
   const handleFileUpload = (file: File) => {
@@ -49,7 +54,6 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
       const img = new Image();
       img.onload = () => {
         setImage(img);
-        // Auto-select first gradient template if no template is selected
         if (!selectedTemplate) {
           const defaultBg: Template = {
             id: "gradient-purple-pink",
@@ -79,7 +83,6 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    
     const file = e.dataTransfer.files[0];
     if (file) handleFileUpload(file);
   };
@@ -89,7 +92,6 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
     const handlePaste = (e: ClipboardEvent) => {
       const items = e.clipboardData?.items;
       if (!items) return;
-
       for (let i = 0; i < items.length; i++) {
         if (items[i].type.indexOf("image") !== -1) {
           const file = items[i].getAsFile();
@@ -98,22 +100,18 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
         }
       }
     };
-
     window.addEventListener("paste", handlePaste);
     return () => window.removeEventListener("paste", handlePaste);
   }, []);
 
-  // Handle template selection — track background separately from device
+  // Handle template selection
   const handleTemplateChange = (template: Template) => {
     if (template.type === "gradient" || template.type === "solid") {
       setActiveBackground(template);
-      // If a device is currently active, keep the device but update background only
       if (selectedTemplate?.type === "device") {
-        // Don't change selectedTemplate — just update activeBackground (triggers re-render)
         return;
       }
     }
-    // When selecting a device with no background chosen, default to first gradient
     if (template.type === "device" && !activeBackground) {
       setActiveBackground({
         id: "gradient-purple-pink",
@@ -128,7 +126,6 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
   // Render canvas when image or template changes
   useEffect(() => {
     if (image && canvasRef.current && selectedTemplate) {
-      // If a device frame is selected, inject the active background and screen bg color
       const renderTemplate = selectedTemplate.type === "device" && activeBackground
         ? { ...selectedTemplate, config: { ...selectedTemplate.config, _background: activeBackground, _screenBgColor: screenBgColor } }
         : selectedTemplate.type === "device"
@@ -136,7 +133,6 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
         : selectedTemplate;
 
       applyTemplate(canvasRef.current, image, renderTemplate, customWatermark, imageTransform, isPaid).then(() => {
-        // Capture real screen dimensions set by applyTemplate for fill button calculations
         if (renderTemplate.config._realScreenDimensions) {
           realScreenDimsRef.current = renderTemplate.config._realScreenDimensions;
         }
@@ -167,9 +163,7 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
   // Get screen dimensions for the current device template
   const getScreenDimensions = () => {
     if (!selectedTemplate?.config?.device) return { width: 0, height: 0 };
-    // Use real dimensions captured from the last render (accurate for all orientations)
     if (realScreenDimsRef.current) return realScreenDimsRef.current;
-    // Fallback to hardcoded dimensions
     if (selectedTemplate.config.device === "phone") {
       const orientation = selectedTemplate.config.orientation || "portrait";
       return { width: orientation === "portrait" ? 380 : 780, height: orientation === "portrait" ? 780 : 380 };
@@ -200,13 +194,11 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
     }
   };
 
-  // Fill Screen - image covers entire screen (no gaps, may crop edges)
   const handleFillScreen = () => {
     if (!selectedTemplate?.config?.device || !image) return;
     applyFillTransform({ scale: 1, x: 0, y: 0 });
   };
 
-  // Fill Horizontal - image touches left and right edges (may have gaps top/bottom)
   const handleFillHorizontal = () => {
     if (!selectedTemplate?.config?.device || !image) return;
     const { width: sw, height: sh } = getScreenDimensions();
@@ -216,7 +208,6 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
     applyFillTransform({ scale: relativeScale, x: 0, y: 0 });
   };
 
-  // Fill Vertical - image touches top and bottom edges (may have gaps left/right)
   const handleFillVertical = () => {
     if (!selectedTemplate?.config?.device || !image) return;
     const { width: sw, height: sh } = getScreenDimensions();
@@ -226,18 +217,14 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
     applyFillTransform({ scale: relativeScale, x: 0, y: 0 });
   };
 
-  // Handle mouse down for dragging (all device frames)
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!selectedTemplate?.config?.device) return;
-    
     setIsTransforming(true);
     transformStartRef.current = { x: e.clientX - imageTransform.x, y: e.clientY - imageTransform.y };
   };
 
-  // Handle mouse move for dragging
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isTransforming || !transformStartRef.current) return;
-    
     const startX = transformStartRef.current.x;
     const startY = transformStartRef.current.y;
     setImageTransform(prev => ({
@@ -247,32 +234,22 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
     }));
   };
 
-  // Handle mouse up
   const handleMouseUp = () => {
     setIsTransforming(false);
     transformStartRef.current = null;
   };
 
-  // Handle manage subscription
+  // Handle manage subscription (logged-in paid users)
   const handleManageSubscription = async () => {
-    const customerId = getCustomerId();
-    
-    if (!customerId) {
-      alert('Customer information not found. Please contact support.');
-      return;
-    }
-    
     try {
       const response = await fetch('/api/portal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customer_id: customerId }),
       });
-      
+
       const data = await response.json();
-      
+
       if (data.url) {
-        // Redirect to Stripe billing portal
         window.location.href = data.url;
       } else {
         alert('Failed to open billing portal. Please try again.');
@@ -283,54 +260,41 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
     }
   };
 
-  // Download handler
+  // Handle sign out
+  const handleSignOut = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+  };
+
+  // Download handler — dual path: logged-in (DB) vs anonymous (localStorage)
   const handleDownload = async () => {
-    // Verify subscription if user is marked as paid
-    if (isPaid) {
-      const subscriptionId = getSubscriptionId();
-      
-      // If we have a subscription ID, verify it (unless cached within last hour)
-      if (subscriptionId && !isVerificationCached()) {
-        try {
-          const response = await fetch('/api/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ subscription_id: subscriptionId }),
-          });
-          
-          const data = await response.json();
-          
-          if (!data.active) {
-            // Subscription is no longer active
-            revokePaid();
-            setIsPaid(false);
-            alert('Your subscription is no longer active. Please renew to continue using Pro features.');
-            setShowPaywall(true);
-            return;
-          }
-          
-          // Cache the verification
-          updateVerificationCache();
-        } catch (error) {
-          console.error('Failed to verify subscription:', error);
-          // Continue anyway - don't block export on verification failure
+    if (user) {
+      // Logged-in path: check DB subscription/usage
+      if (!isPaid) {
+        const count = await getDbUsageCount(user.id);
+        if (count >= FREE_LIMIT) {
+          setShowPaywall(true);
+          return;
         }
       }
-    }
-    
-    // Check if user has hit free limit
-    if (!isPaid && hasHitFreeLimit()) {
-      setShowPaywall(true);
-      return;
-    }
 
-    // Export the canvas
-    if (canvasRef.current) {
-      exportCanvas(canvasRef.current, "appshot-pro");
-      
-      // Increment usage count for free users
-      if (!isPaid) {
-        incrementUsage();
+      // Export the canvas
+      if (canvasRef.current) {
+        exportCanvas(canvasRef.current, "appshot-pro");
+        if (!isPaid) {
+          await incrementDbUsage(user.id);
+        }
+      }
+    } else {
+      // Anonymous path: localStorage usage tracking
+      if (hasHitFreeLimit()) {
+        setShowPaywall(true);
+        return;
+      }
+
+      if (canvasRef.current) {
+        exportCanvas(canvasRef.current, "appshot-pro");
+        incrementLocalUsage();
       }
     }
   };
@@ -349,21 +313,40 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
           <h2 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-500 bg-clip-text text-transparent">
             AppShot Pro
           </h2>
-          <div className="w-20"></div>
+          <div className="flex items-center gap-3">
+            {user ? (
+              <>
+                <span className="text-xs text-gray-400 hidden sm:inline">{user.email}</span>
+                <button
+                  onClick={handleSignOut}
+                  className="text-xs text-gray-400 hover:text-white transition-colors border border-gray-700 px-3 py-1.5 rounded-lg"
+                >
+                  Sign Out
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={onAuthRequired}
+                className="text-xs text-purple-400 hover:text-purple-300 transition-colors border border-purple-500/30 px-3 py-1.5 rounded-lg"
+              >
+                Sign In
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="max-w-7xl mx-auto grid lg:grid-cols-[1fr_320px] gap-8">
         {/* Main Canvas Area */}
         <div className="space-y-4">
-          {/* Custom Watermark Input - Always visible when image is loaded */}
+          {/* Custom Watermark Input */}
           {image && (
             <div className="bg-gray-800/50 rounded-xl p-6 border border-gray-700">
               <div className="flex items-center justify-between mb-2">
                 <label className="block text-sm font-medium text-gray-300">
                   Custom Watermark (optional)
                 </label>
-                {isPaid && getCustomerId() && (
+                {isPaid && user && (
                   <button
                     onClick={handleManageSubscription}
                     className="text-xs text-purple-400 hover:text-purple-300 transition-colors underline"
@@ -380,9 +363,9 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
                 className="w-full bg-gray-900/50 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-purple-500 transition-colors"
               />
               <p className="text-xs text-gray-500 mt-2">
-                {isPaid 
-                  ? "Adds your text at bottom center • Pro users have no forced watermark" 
-                  : `Adds your text at bottom center • "MyAppShot.com" branding shown at bottom right • ${getRemainingExports()} free exports remaining this month`
+                {isPaid
+                  ? "Adds your text at bottom center • Pro users have no forced watermark"
+                  : `Adds your text at bottom center • "MyAppShot.com" branding shown at bottom right • ${user ? "Sign in tracked" : getRemainingExports() + " free exports remaining this month"}`
                 }
               </p>
             </div>
@@ -397,8 +380,8 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
               className={`
                 border-2 border-dashed rounded-xl p-12 text-center cursor-pointer
                 transition-all
-                ${isDragging 
-                  ? "border-purple-500 bg-purple-500/10" 
+                ${isDragging
+                  ? "border-purple-500 bg-purple-500/10"
                   : "border-gray-700 hover:border-gray-600 bg-gray-800/30"
                 }
               `}
@@ -432,7 +415,7 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
               {/* Preview Canvas */}
               <div className="bg-gray-800/50 rounded-xl p-8 border border-gray-700">
                 <div className="flex items-center justify-center gap-6">
-                  {/* Zoom Slider - shown for all device frames */}
+                  {/* Zoom Slider */}
                   {selectedTemplate?.config?.device && (
                     <div className="flex flex-col items-center gap-2">
                       <div className="flex flex-col gap-1">
@@ -488,7 +471,7 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
                       </div>
                     </div>
                   )}
-                  
+
                   <canvas
                     ref={canvasRef}
                     onMouseDown={handleMouseDown}
@@ -539,7 +522,12 @@ export default function ScreenshotEditor({ onBack }: { onBack: () => void }) {
       </div>
 
       {/* Paywall Modal */}
-      <PaywallModal isOpen={showPaywall} onClose={() => setShowPaywall(false)} />
+      <PaywallModal
+        isOpen={showPaywall}
+        onClose={() => setShowPaywall(false)}
+        user={user}
+        onAuthRequired={onAuthRequired}
+      />
     </div>
   );
 }

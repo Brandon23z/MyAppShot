@@ -1,31 +1,44 @@
 "use client";
 
 import { useState } from "react";
+import { User } from "@supabase/supabase-js";
 import { FREE_LIMIT } from "../utils/freebie";
 
 interface PaywallModalProps {
   isOpen: boolean;
   onClose: () => void;
+  user: User | null;
+  onAuthRequired: () => void;
 }
 
-export default function PaywallModal({ isOpen, onClose }: PaywallModalProps) {
+export default function PaywallModal({ isOpen, onClose, user, onAuthRequired }: PaywallModalProps) {
   const [isLoading, setIsLoading] = useState(false);
 
   if (!isOpen) return null;
 
   const handleUpgrade = async () => {
+    // Require sign-in before checkout
+    if (!user) {
+      onClose();
+      onAuthRequired();
+      return;
+    }
+
     setIsLoading(true);
-    
+
     try {
       const response = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: user.id,
+          email: user.email,
+        }),
       });
-      
+
       const data = await response.json();
-      
+
       if (data.url) {
-        // Redirect to Stripe Checkout
         window.location.href = data.url;
       } else {
         alert('Failed to create checkout session. Please try again.');
@@ -61,7 +74,7 @@ export default function PaywallModal({ isOpen, onClose }: PaywallModalProps) {
               <p className="text-sm text-gray-400">Create as many screenshots as you need</p>
             </div>
           </div>
-          
+
           <div className="flex items-start gap-3 bg-gray-800/50 p-4 rounded-lg border border-gray-700">
             <span className="text-2xl">✨</span>
             <div>
@@ -69,7 +82,7 @@ export default function PaywallModal({ isOpen, onClose }: PaywallModalProps) {
               <p className="text-sm text-gray-400">Remove "MyAppShot.com" branding</p>
             </div>
           </div>
-          
+
           <div className="flex items-start gap-3 bg-gray-800/50 p-4 rounded-lg border border-gray-700">
             <span className="text-2xl">🎨</span>
             <div>
@@ -96,7 +109,7 @@ export default function PaywallModal({ isOpen, onClose }: PaywallModalProps) {
           disabled={isLoading}
           className="w-full bg-gradient-to-r from-purple-500 to-pink-600 text-white py-4 rounded-lg font-bold text-lg hover:from-purple-600 hover:to-pink-700 transition-all transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none shadow-lg shadow-purple-500/50"
         >
-          {isLoading ? 'Loading...' : 'Upgrade to AppShot Pro — $5/month'}
+          {isLoading ? 'Loading...' : user ? 'Upgrade to AppShot Pro — $5/month' : 'Sign In to Upgrade — $5/month'}
         </button>
 
         {/* Close button */}
